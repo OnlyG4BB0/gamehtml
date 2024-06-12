@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>prof versus</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            background: #87CEEB;
+        }
+        canvas {
+            display: block;
+            background: #000;
+        }
+        .win-message, .pause-menu, .restart-menu, .main-menu {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2em;
+            color: white;
+        }
+        .pause-menu, .restart-menu, .main-menu {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .restart-menu button, .main-menu button {
+            font-size: 1em;
+            padding: 10px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div class="win-message" id="winMessage"></div>
+<div class="pause-menu" id="pauseMenu">Gioco in pausa<br>Premi Esc per continuare</div>
+<div class="restart-menu" id="restartMenu">
+    <div id="endMessage"></div>
+    <button onclick="restartGame()">Ricomincia</button>
+</div>
+<div class="main-menu" id="mainMenu">
+    <div>Benvenuto in PROF VERSUS</div>
+    <button onclick="startGame()">Inizia Gioco</button>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+let isPlaying = false;
+let collidingWithEnemy = false;
+let once = false;
+const damageDelay = 1500;
+const damageAmountMin = 20;
+const damageAmountMax = 40;
+ 
+const playerImage = new Image();
+playerImage.src = 'https://yt3.googleusercontent.com/ytc/AIdro_nJGH2c1E0ZC7B_j8wI1X0hdv6mzwmJynlq65mW23KbrA=s900-c-k-c0x00ffffff-no-rj'; // Sostituisci con il percorso dell'immagine del giocatore
+ 
+const enemyImage = new Image();
+enemyImage.src = 'https://media.licdn.com/dms/image/C5103AQFPFiK-qTqPhA/profile-displayphoto-shrink_200_200/0/1517017862326?e=2147483647&v=beta&t=flhdpU8pkznhZdVfXQ-dFKcxJxu4NoEtsSJjXMXeDgI'; // Sostituisci con il percorso dell'immagine del nemico
+ 
+function damagePlayer() {
+    player.health -= ((Math.random() * damageAmountMax - damageAmountMin) + damageAmountMin);
+    if (player.health < 0) {
+        player.health = 0;
+    }
+    if (player.health === 0) {
+        endGame("Game Over");
+    }
+}
+ 
+setInterval(() => {
+    if (collidingWithEnemy) damagePlayer();
+}, damageDelay);
+ 
+const player = {
+    x: 50, y: 50, width: 50, height: 50, speed: 5, color: 'blue', health: 100, maxHealth: 100,
+    bullets: [], direction: {x: 1, y: 0}, // Direzione iniziale a destra
+    ammo: 100,
+};
+ 
+let enemies = [];
+let wave = 1;
+let score = 0;
+let keys = {};
+let isPaused = false;
+let animationId;
+ 
+document.addEventListener('keydown', (event) => {
+    keys[event.code] = true;
+    if (event.code === 'Escape') {
+        togglePause();
+    }
+});
+document.addEventListener('keyup', (event) => {
+    keys[event.code] = false;
+});
+ 
+function spawnEnemies(wave) {
+    enemies = [];
+    for (let i = 0; i < wave; i++) {
+        enemies.push({
+            x: canvas.width - 100, y: Math.random() * canvas.height, width: 50, height: 50,
+            color: 'red', health: 50 + wave * 10, maxHealth: 50 + wave * 10, speed: 1 + wave * 0.2,
+        });
+    }
+}
+ 
+function drawPlayer() {
+    ctx.drawImage(playerImage, player.x, player.y, player.width, player.height);
+    drawHealthBar(player, 10, 10);
+    ctx.fillStyle = 'white';
+    ctx.fillText(`Ammo: ${player.ammo}`, 10, 40);
+    ctx.fillText(`Wave: ${wave}`, 10, 60);
+    ctx.fillText(`Score: ${score}`, 10, 80);
+}
+ 
+function drawEnemies() {
+    enemies.forEach(enemy => {
+        ctx.drawImage(enemyImage, enemy.x, enemy.y, enemy.width, enemy.height);
+        drawHealthBar(enemy, enemy.x, enemy.y - 10);
+    });
+}
+ 
+function drawHealthBar(entity, x, y) {
+    ctx.fillStyle = 'gray';
+    ctx.fillRect(x, y, 100, 10);
+    ctx.fillStyle = 'green';
+    ctx.fillRect(x, y, 100 * (entity.health / entity.maxHealth), 10);
+}
+ 
+function drawBullets() {
+    player.bullets.forEach(bullet => {
+        ctx.fillStyle = 'yellow';
+        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+    });
+}
+ 
+function updatePlayer() {
+    if (keys['KeyW'] && player.y > 0) {
+        player.y -= player.speed;
+    }
+    if (keys['KeyS'] && player.y + player.height < canvas.height) {
+        player.y += player.speed;
+    }
+    if (keys['KeyA'] && player.x > 0) {
+        player.x -= player.speed;
+    }
+    if (keys['KeyD'] && player.x + player.width < canvas.width) {
+        player.x += player.speed;
+    }
+    if (keys['ArrowUp']) {
+        player.direction = {x: 0, y: -1};
+    }
+    if (keys['ArrowDown']) {
+        player.direction = {x: 0, y: 1};
+    }
+    if (keys['ArrowLeft']) {
+        player.direction = {x: -1, y: 0};
+    }
+    if (keys['ArrowRight']) {
+        player.direction = {x: 1, y: 0};
+    }
+    if (keys['Space']) {
+        shoot();
+    }
+    player.bullets.forEach(bullet => {
+        bullet.x += bullet.speed * player.direction.x;
+        bullet.y += bullet.speed * player.direction.y;
+    });
+    player.bullets = player.bullets.filter(bullet => bullet.x < canvas.width && bullet.y < canvas.height && bullet.x > 0 && bullet.y > 0);
+    if (player.health === 0) {
+        endGame("Game Over");
+    }
+}
+ 
+function updateEnemies() {
+    enemies.forEach(enemy => {
+        if (enemy.x > player.x) {
+            enemy.x -= enemy.speed;
+        } else {
+            enemy.x += enemy.speed;
+        }
+        if (enemy.y > player.y) {
+            enemy.y -= enemy.speed;
+        } else {
+            enemy.y += enemy.speed;
+        }
+        if (isColliding(player, enemy)) {
+            collidingWithEnemy = true;
+            if (!once) {
+                once = true;
+                damagePlayer();
+            }
+        } else {
+            collidingWithEnemy = false;
+            once = false;
+        }
+        player.bullets.forEach(bullet => {
+            if (isColliding(bullet, enemy)) {
+                enemy.health -= 20;
+                bullet.x = canvas.width; // Rimuove il proiettile dallo schermo
+                if (enemy.health < 0) {
+                    enemy.health = 0;
+                }
+                if (enemy.health <= 0) {
+                    player.ammo += 10;
+                    score += 10;
+                }
+            }
+        });
+    });
+    enemies = enemies.filter(enemy => enemy.health > 0);
+    if (enemies.length === 0) {
+        wave++;
+        spawnEnemies(wave);
+    }
+}
+ 
+function isColliding(rect1, rect2) {
+    return rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x &&
+           rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y;
+}
+ 
+function shoot() {
+    if (player.ammo > 0) {
+        player.ammo -= 1;
+        const bullet = {
+            x: player.x + player.width / 2, y: player.y + player.height / 2,
+            width: 10, height: 10, speed: 10,
+        };
+        player.bullets.push(bullet);
+    }
+}
+ 
+function update() {
+    if (!isPaused && isPlaying) {
+        updatePlayer();
+        updateEnemies();
+    }
+}
+ 
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawPlayer();
+    drawEnemies();
+    drawBullets();
+}
+ 
+function gameLoop() {
+    draw();
+    update();
+    animationId = requestAnimationFrame(gameLoop);
+}
+ 
+function togglePause() {
+    isPaused = !isPaused;
+    document.getElementById('pauseMenu').style.display = isPaused ? 'block' : 'none';
+    if (!isPaused) {
+        gameLoop();
+    } else {
+        cancelAnimationFrame(animationId);
+    }
+}
+ 
+function endGame(message) {
+    document.getElementById('endMessage').innerText = `${message}\nPunteggio: ${score}\nOndate sopravvissute: ${wave}`;
+    document.getElementById('restartMenu').style.display = 'block';
+    cancelAnimationFrame(animationId);
+    isPlaying = false;
+}
+ 
+function startGame() {
+    document.getElementById('mainMenu').style.display = 'none';
+    player.x = 50;
+    player.y = 50;
+    player.health = player.maxHealth;
+    player.ammo = 100;
+    player.bullets = [];
+    wave = 1;
+    score = 0;
+    spawnEnemies(wave);
+    isPlaying = true;
+    gameLoop();
+}
+ 
+function restartGame() {
+    document.getElementById('restartMenu').style.display = 'none';
+    startGame();
+}
+ 
+document.getElementById('mainMenu').style.display = 'block';
+ 
+</script>
+</body>
+</html>
